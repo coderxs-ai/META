@@ -1,17 +1,3 @@
-// ==UserScript==
-// @name         Meta Signup Assistant Pro
-// @namespace    https://viayoo.com/
-// @version      10.4
-// @description  auth.meta.com signup helper: temp mail (Boomlify), OTP auto-fetch + auto-submit + guaranteed next-step advance, auto-fill name/password/DOB/gender, post-OTP step chain, Telegram report. Never clicks Facebook/Instagram. Captcha stays manual.
-// @match        *://auth.meta.com/*
-// @match        *://*.meta.com/*
-// @match        *://*.accountscenter.meta.com/*
-// @run-at       document-idle
-// @grant        GM_xmlhttpRequest
-// @connect      v1.boomlify.com
-// @connect      api.telegram.org
-// ==/UserScript==
-
 (function () {
   'use strict';
 
@@ -21,12 +7,12 @@
     lastName: 'Sharma',
     password: 'Hujaifa@123#',
     birthDay: 15,
-    birthMonth: 5,                 // 1-12
+    birthMonth: 5,
     birthYear: 1995,
-    gender: 'male',                // 'male' | 'female'
+    gender: 'male',
 
     boomlifyKey: 'api_0eecb67e3ca23ce753f73d2b3cb585e0c0f82c43594186fc74bfda731d65a8a7',
-    mailTime: '10min',             // 10min | 1hour | 1day | permanent
+    mailTime: '10min',
     mailDomain: '',
     autoTempMail: true,
 
@@ -34,34 +20,30 @@
     submitDelayMs: 1200,
     stepDelayMs: 900,
 
-    // ---- TELEGRAM ----
-    tgToken: '8819343276:AAHO4ifAsL4KGGTjDn8yCGuqwNx08iSqPGQ',                   // BotFather se bot token
-    tgChatId: '8068314746',                  // aapka chat id
-    tgSendPassword: false,         // true = message me password bhi jayega
+    tgToken: '8819343276:AAHO4ifAsL4KGGTjDn8yCGuqwNx08iSqPGQ',
+    tgChatId: '8068314746',
+    tgSendPassword: false,
 
-    // ---- OTP ----
     focusOtpField: true,
     autoSubmitOtp: true,
     otpMinLength: 5,
     otpPollMs: 2500,
-    otpSubmitDelayMs: 500,         // code fill hone ke baad confirm click
-    otpVerifyTimeoutMs: 6000,      // click ke baad page change ka intezaar
-    otpMaxSubmits: 4,              // ek hi code pe max attempts
-    otpAdvanceAfterSuccess: true,  // OTP ke baad khud next steps chalao
+    otpSubmitDelayMs: 500,
+    otpVerifyTimeoutMs: 6000,
+    otpMaxSubmits: 4,
+    otpAdvanceAfterSuccess: true,
 
     defaultDomain: 'gmail.com',
     minPasswordLength: 8,
 
-    // ---- CLIPBOARD ----
-    autoCopyEmail: true,        // email bante hi clipboard me copy
-    copyOnEveryStep: false,     // har page pe dobara copy (default off)
-    showCopyChip: true,         // screen pe tap-to-copy chip
-    chipAutoHideMs: 0,          // 0 = jab tak khud band na karo
+    autoCopyEmail: true,
+    copyOnEveryStep: false,
+    showCopyChip: true,
+    chipAutoHideMs: 0,
 
     toasts: true,
     debug: true
   };
-  /* ================================================================== */
 
   const MONTHS = ['january','february','march','april','may','june','july',
                   'august','september','october','november','december'];
@@ -69,10 +51,8 @@
   const log = (...a) => CONFIG.debug && console.log('[MetaAssist]', ...a);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  /* Facebook / Instagram / Google / Apple login buttons ko kabhi click nahi karna */
   const BLOCKED_BTN_RE = /facebook|instagram|google|apple/;
 
-  /* ---------- Saved state ---------- */
   const STORE_KEY = 'metaAssist.v10';
   const state = {
     done: false, email: '', password: '', skipped: false, tmId: '',
@@ -183,10 +163,9 @@
   const tgPassLine = () => CONFIG.tgSendPassword ? '\n🔒 ' + getPassword() : '';
 
   /* ================= CLIPBOARD ================= */
-  let pendingCopy = '';      // gesture ka intezaar kar raha text
+  let pendingCopy = '';
   let copiedOnce = '';
 
-  // 3 layers: async API -> execCommand -> user gesture pe retry
   function copyText(text) {
     if (!text) return Promise.resolve(false);
 
@@ -225,14 +204,13 @@
       if (navigator.vibrate) { try { navigator.vibrate(40); } catch (e) {} }
       showCopyChip(text, true);
     } else {
-      pendingCopy = text;                 // next real tap pe dobara try
+      pendingCopy = text;
       if (!silent) notify('Tap anywhere to copy the email', 'warn', 5000);
       showCopyChip(text, false);
     }
     return ok;
   }
 
-  // browser clipboard ko aksar real user gesture chahiye hota hai
   ['pointerdown', 'touchend', 'keydown'].forEach((ev) =>
     document.addEventListener(ev, () => {
       if (!pendingCopy) return;
@@ -243,7 +221,6 @@
       });
     }, true));
 
-  /* ---- tap-to-copy chip (hamesha haath me rahe) ---- */
   let chipHost = null;
   function showCopyChip(text, copied) {
     if (!CONFIG.showCopyChip || !text) return;
@@ -393,7 +370,7 @@
       const a = await createTempMail();
       notify('Temp email ready: ' + a, 'success', 4500);
       sendTelegram('📧 Email: ' + a + tgPassLine(), 'email:' + a);
-      if (CONFIG.autoCopyEmail) await copyEmail(a, true);   // clipboard me chala jaye
+      if (CONFIG.autoCopyEmail) await copyEmail(a, true);
     } catch (e) {
       log('createTempMail error', e);
       notify('Temp email failed: ' + e.message, 'error');
@@ -483,7 +460,6 @@
     el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  // page se "6-digit code" padho; na mile to code ki apni length
   function expectedOtpLen(fallback) {
     const t = (document.body.innerText || '').toLowerCase();
     const m = t.match(/(\d)\s*[- ]?digit/);
@@ -491,13 +467,11 @@
     return (n >= 4 && n <= 8) ? n : (fallback || 6);
   }
 
-  /* React-controlled single input ke liye: ek-ek char "type" karo */
   function typeIntoInput(el, code) {
     el.focus();
     el.click();
     try { el.setSelectionRange(0, (el.value || '').length); } catch (e) {}
 
-    // clear
     nativeInputValue.call(el, '');
     el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
 
@@ -531,7 +505,6 @@
 
     if (els.length === 1) {
       const el = els[0];
-      // 3 strategies, jo chale wahi
       if (!typeIntoInput(el, code) &&
           !pasteInto(el, code)) {
         setNative(el, code);
@@ -548,7 +521,6 @@
       return false;
     }
 
-    // multi-box
     code.split('').forEach((d, i) => {
       if (!els[i]) return;
       const opts = { key: d, code: 'Digit' + d, keyCode: 48 + (+d), which: 48 + (+d), bubbles: true, cancelable: true };
@@ -599,7 +571,7 @@
           filled = true;
           notify('Verification code filled: ' + code, 'success');
           sendTelegram('🔑 OTP: ' + code + '\n📧 ' + getEmail(), 'otp:' + getEmail() + ':' + code);
-          submitOtpNow(code);           // fill ke turant baad next step
+          submitOtpNow(code);
         }
         break;
       }
@@ -616,7 +588,6 @@
     otpPolling = false;
   }
 
-  /* ---- OTP submit + verified detection + forced next step ---- */
   const OTP_SUBMIT_TEXTS = ['confirm','verify','continue','next','submit','done','confirm code','verify code'];
 
   function otpPageSig() {
@@ -634,7 +605,6 @@
       for (let attempt = 1; attempt <= CONFIG.otpMaxSubmits; attempt++) {
         if (hasCaptcha()) { notify('Captcha detected. Solve it manually', 'warn', 6000); break; }
 
-        // LENGTH GUARD: poore digits na ho to click mat karo, dobara type karo
         let digits = otpValue().replace(/\D/g, '');
         for (let fix = 0; fix < 3 && digits.length !== need && code && code.length === need; fix++) {
           log('OTP incomplete (' + digits.length + '/' + need + '), re-typing...');
@@ -672,7 +642,6 @@
         }
         otpSubmits = attempt;
 
-        // page change ka intezaar
         const moved = await waitForChange(before, CONFIG.otpVerifyTimeoutMs);
         if (moved) {
           state.otpVerified = true;
@@ -692,7 +661,7 @@
           break;
         }
 
-        if (otpLengthError() && code) {         // sirf adhoora type hua tha
+        if (otpLengthError() && code) {
           log('length error -> refill');
           clearOtpInputs();
           await sleep(250);
@@ -716,13 +685,11 @@
     });
   }
 
-  // asli "galat code" error (length wali shikayat alag hai)
   function otpError() {
     const t = (document.body.innerText || '').toLowerCase();
     return /incorrect code|wrong code|code you entered|didn.t match|invalid code|code has expired|expired code/.test(t);
   }
 
-  // "The confirmation code should contain 6 digits." -> sirf refill karna hai
   function otpLengthError() {
     return /should contain \d+ digits|enter (?:the )?\d+[- ]digit/.test(
       (document.body.innerText || '').toLowerCase());
@@ -732,7 +699,6 @@
     otpInputs().forEach((el) => { try { setNative(el, ''); } catch (e) {} });
   }
 
-  /* ---- OTP ke baad ki chain: Save login info / Create account / Confirm etc. ---- */
   let advanceRuns = 0;
   async function advanceAfterOtp() {
     if (advanceRuns > 12) return;
@@ -740,7 +706,7 @@
     for (let i = 0; i < 6; i++) {
       await sleep(CONFIG.stepDelayMs);
       if (hasCaptcha()) { notify('Captcha detected. Solve it manually', 'warn', 6000); return; }
-      if (findOtp()) return;                 // naya OTP page -> normal flow
+      if (findOtp()) return;
       const text = (document.body.innerText || '').toLowerCase();
       const rule = STEP_RULES.find((r) => r.re.test(text));
       const texts = rule ? rule.buttons : ['continue','next','done','ok','confirm'];
@@ -886,7 +852,6 @@
 
       Object.assign(state, { done: true, skipped: false, password: pass, email, tmId: '', otpVerified: false });
       saveState(); closePopup();
-      // manual email bhi clipboard me (real click gesture hai, isliye pakka chalega)
       if (email && CONFIG.autoCopyEmail) copyEmail(email, true);
       if (email) sendTelegram('📧 Email: ' + email + tgPassLine(), 'email:' + email);
       notify(email ? 'Saved. Automation started' : 'Started. Temp email will be created', 'success');
@@ -922,7 +887,6 @@
     const fb = root.querySelector('button');
     let pressTimer = null, longPressed = false;
 
-    // long-press (500ms) = email copy, normal tap = settings
     const startPress = () => {
       longPressed = false;
       pressTimer = setTimeout(() => {
@@ -996,7 +960,6 @@
     return null;
   }
 
-  // OTP / code field ko email samajhne se roko
   const CODE_RE = /\b(code|otp|pin|one[- ]?time|confirmation|verification)\b/;
 
   function looksLikeCodeField(el) {
@@ -1007,7 +970,6 @@
     const lbl = (el.getAttribute('aria-label') || '').toLowerCase() ||
                 (el.id && (document.querySelector('label[for="' + CSS.escape(el.id) + '"]') || {}).innerText || '').toLowerCase();
     if (lbl && CODE_RE.test(lbl)) return true;
-    // page clearly a confirmation-code screen
     const t = (document.body.innerText || '').toLowerCase();
     return /enter the confirmation code|confirmation code should contain|enter the code|digit code/.test(t);
   }
@@ -1061,7 +1023,6 @@
     return 4;
   }
 
-  // Facebook / Instagram / Google / Apple wale buttons kabhi match nahi honge
   const isBlockedBtn = (el) =>
     BLOCKED_BTN_RE.test(normText(el)) ||
     BLOCKED_BTN_RE.test((el.getAttribute('aria-label') || '').toLowerCase());
@@ -1087,7 +1048,6 @@
     hits.sort((a, b) => buttonRank(a) - buttonRank(b));
     if (hits[0]) return hits[0];
 
-    // "Use mobile number or email address" aksar plain div/span hota hai
     const plainTexts = texts.filter((x) => x.length > 25);
     if (plainTexts.length) {
       const els = Array.from(document.querySelectorAll('div, span, a, p, button'))
@@ -1113,7 +1073,6 @@
     'iframe[src*="captcha" i], iframe[src*="recaptcha" i], iframe[src*="hcaptcha" i], ' +
     'iframe[src*="arkose" i], iframe[title*="captcha" i], div[id*="captcha" i], img[src*="captcha" i]');
 
-  /* ---------- Fillers ---------- */
   function fillInput(el, value) {
     if (!canTouch(el) || el.value === value) return false;
     bump(el);
@@ -1157,7 +1116,6 @@
     return false;
   }
 
-  /* ---------- DOB ---------- */
   const comboDone = new WeakSet();
   let comboBusy = false;
 
@@ -1269,9 +1227,8 @@
     return checks.every(Boolean);
   }
 
-  /* ---------- Auto-fill ---------- */
   function autoFill() {
-    if (findOtp() && !findEmail()) return;   // OTP page pe kuch aur mat chhedo
+    if (findOtp() && !findEmail()) return;
 
     const em = findEmail();
     if (em) {
@@ -1315,19 +1272,16 @@
     Array.from(document.querySelectorAll('input, select'))
       .filter(isVisible).map((e) => e.name || e.id || e.type).join('|');
 
-  /* ---------- Step rules ---------- */
   const submitState = new Map();
   const SUBMIT_TEXTS = ['continue','next','sign up','signup','create account','create new account','submit'];
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
   const STEP_RULES = [
-    // landing page -> sirf "Use mobile number or email address" dabao (Facebook/Instagram nahi)
     { name:'choose-email', re:/log in or create an account/,      buttons:['use mobile number or email address'] },
     { name:'save-login',   re:/save your login info/,              buttons:['not now','save','continue'] },
     { name:'finish',       re:/finish creating your meta account/, buttons:['create account','continue'] },
     { name:'create-new',   re:/create a new meta account/,         buttons:['create new account','continue'] },
     { name:'meta-ai',      re:/edit your meta ai details/,         buttons:['confirm','continue'] },
-    // footer ke "Terms / Privacy" se match na ho
     { name:'terms',        re:/i agree to|agree to (the |our )?terms/, buttons:['i agree','agree','accept','continue','next'] },
     { name:'welcome',      re:/welcome to meta|account created|you.re all set/, buttons:['continue','done','next','ok'] },
     { name:'review',       re:/review your info|confirm your info/, buttons:['continue','confirm','next'] }
@@ -1391,7 +1345,7 @@
     if (!CONFIG.autoSubmitAfterEmail) return;
 
     const email = findEmail();
-    if (!email && findOtp()) return;   // OTP page -> handleOtp
+    if (!email && findOtp()) return;
 
     const text = (document.body.innerText || '').toLowerCase();
     for (const r of STEP_RULES) {
@@ -1407,11 +1361,10 @@
     if (hasFormFields()) return scheduleClick(['next','continue'], formReady, CONFIG.stepDelayMs);
   }
 
-  /* ---------- OTP page handler ---------- */
   function handleOtp() {
     const otp = findOtp();
     if (!otp || findEmail()) {
-      if (otpSince) {                    // OTP page abhi abhi chhoda
+      if (otpSince) {
         otpSince = 0; otpFocused = false; otpSubmits = 0; otpFilledCode = '';
         if (!state.otpVerified) {
           state.otpVerified = true; saveState();
@@ -1432,7 +1385,6 @@
     if (state.tmId) pollTempOtp();
     else if (CONFIG.focusOtpField && !otpFocused && !otpValue()) { otp.focus(); otpFocused = true; }
 
-    // manual / already-typed code bhi submit karo
     if (!otpBusy && CONFIG.autoSubmitOtp) {
       const digits = otpValue().replace(/\D/g, '');
       const need = expectedOtpLen(0);
@@ -1447,7 +1399,6 @@
     }
   }
 
-  /* ---------- Main loop ---------- */
   function run() {
     if (popupOpen || !state.done) return;
     try { autoFill(); handleSteps(); handleOtp(); }
@@ -1461,7 +1412,6 @@
   });
   observer.observe(document.body, { childList: true, subtree: true });
 
-  // SPA URL change detect -> fresh step
   let lastUrl = location.href;
   setInterval(() => {
     if (location.href !== lastUrl) {
@@ -1480,7 +1430,6 @@
   } else {
     showFab();
     notify('Assistant active' + (state.email ? ': ' + state.email : ' (temp email mode)'), 'info');
-    // reload ke baad bhi email haath me rahe
     if (state.email && CONFIG.autoCopyEmail) copyEmail(state.email, true);
     run();
   }
